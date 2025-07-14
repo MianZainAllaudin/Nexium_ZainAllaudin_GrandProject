@@ -1,11 +1,12 @@
 "use client";
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { supabase } from "@/lib/supabase";
+import jsPDF from "jspdf";
 import {
   Loader2,
   Sparkles,
@@ -21,6 +22,8 @@ import {
   Star,
   Check,
   AlertCircle,
+  Save,
+  LogOut,
 } from "lucide-react";
 
 interface AIResponse {
@@ -32,17 +35,48 @@ interface AIResponse {
   service?: string;
 }
 
+interface FilePickerOptions {
+  suggestedName?: string;
+  types?: Array<{
+    description: string;
+    accept: Record<string, string[]>;
+  }>;
+}
+
+interface FileSystemFileHandle {
+  createWritable(): Promise<FileSystemWritableFileStream>;
+}
+
+interface FileSystemWritableFileStream {
+  write(data: BlobPart): Promise<void>;
+  close(): Promise<void>;
+}
+
 export default function ResumeGenerator() {
   const [jobDescription, setJobDescription] = useState("");
   const [resumeText, setResumeText] = useState("");
   const [result, setResult] = useState<AIResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [useAlternative, setUseAlternative] = useState(false);
 
-  // State for copy/download feedback
+  // State for copy/download/save feedback
   const [copied, setCopied] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error("Logout error:", error);
+      }
+      // The auth state change listener in page.tsx will handle the redirect
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
 
   const handleGenerate = async () => {
     // Enhanced validation
@@ -68,6 +102,7 @@ export default function ResumeGenerator() {
     setLoading(true);
     setError("");
     setResult(null);
+    setSaved(false); // Reset save state
 
     try {
       const response = await fetch("/api/generate-resume", {
@@ -139,28 +174,163 @@ export default function ResumeGenerator() {
     }
   };
 
-  const downloadResume = () => {
+  const downloadResumeAsPDF = () => {
     if (!result?.tailoredResume) return;
 
     try {
-      const blob = new Blob([result.tailoredResume], {
-        type: "text/plain;charset=utf-8",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `optimized-resume-${
-        new Date().toISOString().split("T")[0]
-      }.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margins = 20;
+      const maxWidth = pageWidth - margins * 2;
 
-      setDownloaded(true);
-      setTimeout(() => setDownloaded(false), 2000);
+      // Set font
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+
+      // Title
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text("Optimized Resume", margins, 25);
+
+      // Date
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Generated: ${new Date().toLocaleDateString()}`, margins, 35);
+
+      // Content
+      doc.setFontSize(11);
+      const lines = doc.splitTextToSize(result.tailoredResume, maxWidth);
+      let yPosition = 50;
+      const lineHeight = 6;
+
+      lines.forEach((line: string) => {
+        if (yPosition > doc.internal.pageSize.getHeight() - 20) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        doc.text(line, margins, yPosition);
+        yPosition += lineHeight;
+      });
+
+      // Create download with file picker
+      const fileName = `optimized-resume-${
+        new Date().toISOString().split("T")[0]
+      }.pdf`;
+
+      // For browsers that support the File System Access API
+      if ("showSaveFilePicker" in window) {
+        (async () => {
+          try {
+            const fileHandle = await (
+              window as Window & {
+                showSaveFilePicker: (
+                  options: FilePickerOptions
+                ) => Promise<FileSystemFileHandle>;
+              }
+            ).showSaveFilePicker({
+              suggestedName: fileName,
+              types: [
+                {
+                  description: "PDF files",
+                  accept: {
+                    "application/pdf": [".pdf"],
+                  },
+                },
+              ],
+            });
+
+            const writable = await fileHandle.createWritable();
+            const pdfBlob = doc.output("blob");
+            await writable.write(pdfBlob);
+            await writable.close();
+
+            setDownloaded(true);
+            setTimeout(() => setDownloaded(false), 2000);
+          } catch (err: unknown) {
+            // Only fallback if NOT user cancellation
+            if (
+              err &&
+              typeof err === "object" &&
+              "name" in err &&
+              (err as { name?: string }).name === "AbortError"
+            ) {
+              // User cancelled, do nothing
+              return;
+            }
+            // Fallback to regular download for other errors
+            doc.save(fileName);
+            setDownloaded(true);
+            setTimeout(() => setDownloaded(false), 2000);
+          }
+        })();
+      } else {
+        // Fallback for browsers without File System Access API
+        doc.save(fileName);
+        setDownloaded(true);
+        setTimeout(() => setDownloaded(false), 2000);
+      }
     } catch (err) {
-      console.error("Download failed:", err);
+      console.error("PDF download failed:", err);
+      setError("Failed to generate PDF. Please try again.");
+    }
+  };
+
+  const handleSave = async () => {
+    if (!result) {
+      setError("No resume data to save");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+
+    try {
+      // Get current user
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error("User not authenticated");
+      }
+
+      // Save to API endpoint which handles both MongoDB and Supabase
+      const response = await fetch("/api/save-resume", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          jobDescription: jobDescription.trim(),
+          sampleResume: resumeText.trim(), // Original resume as sample
+          tailoredResume: result.tailoredResume,
+          matchScore: result.matchScore,
+          keywords: result.keywords,
+          improvements: result.improvements,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to save resume data");
+      }
+
+      const saveResult = await response.json();
+      console.log("Save successful:", saveResult);
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (error) {
+      console.error("Save error:", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to save. Please try again."
+      );
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -182,6 +352,25 @@ export default function ResumeGenerator() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      {/* Header with Logout */}
+      <div className="flex justify-between items-center p-6">
+        <div className="flex items-center gap-3">
+          <Brain className="h-8 w-8 text-indigo-600" />
+          <h1 className="text-2xl font-bold text-gray-800">
+            AI Resume Optimizer
+          </h1>
+        </div>
+        <Button
+          onClick={handleLogout}
+          variant="outline"
+          className="flex items-center gap-2 hover:bg-red-50 hover:text-red-600 hover:border-red-300"
+          size="sm"
+        >
+          <LogOut className="h-4 w-4" />
+          Logout
+        </Button>
+      </div>
+
       <div className="max-w-7xl mx-auto p-6 space-y-8">
         {/* Header */}
         <div className="text-center space-y-4">
@@ -370,7 +559,7 @@ export default function ResumeGenerator() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={downloadResume}
+                      onClick={downloadResumeAsPDF}
                       disabled={downloaded}
                       className={`transition-all duration-300 ${
                         downloaded
@@ -386,7 +575,37 @@ export default function ResumeGenerator() {
                       ) : (
                         <>
                           <Download className="h-4 w-4 mr-2" />
-                          Download
+                          Download as PDF
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSave}
+                      disabled={saving || saved}
+                      className={`transition-all duration-300 ${
+                        saved
+                          ? "bg-purple-100 text-purple-700 border-purple-300"
+                          : saving
+                          ? "bg-gray-100 text-gray-500 border-gray-300"
+                          : "bg-white/20 text-white border-white/30 hover:bg-white/30"
+                      }`}
+                    >
+                      {saving ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : saved ? (
+                        <>
+                          <Check className="h-4 w-4 mr-2" />
+                          Saved!
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4 mr-2" />
+                          Save to Database
                         </>
                       )}
                     </Button>
