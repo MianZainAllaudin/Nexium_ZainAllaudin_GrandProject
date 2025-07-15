@@ -18,7 +18,7 @@ import {
   Zap,
   TrendingUp,
   FileText,
-  Settings,
+  //Settings,
   Star,
   Check,
   AlertCircle,
@@ -59,7 +59,7 @@ export default function ResumeGenerator() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [useAlternative, setUseAlternative] = useState(false);
+  const [useAlternative] = useState(false);
 
   // State for copy/download/save feedback
   const [copied, setCopied] = useState(false);
