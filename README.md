@@ -23,6 +23,7 @@ A modern Next.js web application for generating tailored resumes using AI. Users
 │   ├── layout.tsx        # Root layout
 │   └── page.tsx          # Main entry point
 ├── components/           # Reusable UI and feature components
+├── docs/                 # Project Report
 ├── lib/                  # Utility libraries (e.g., Supabase client)
 ├── public/               # Static assets
 ├── .env.example          # Example environment variables
