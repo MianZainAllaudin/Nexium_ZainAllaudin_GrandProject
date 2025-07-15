@@ -92,6 +92,14 @@ CREATE INDEX idx_resume_generations_created_at ON resume_generations(created_at 
 - **View keyword analysis** to see which important terms are present or missing.
 - **Copy or download** your improved resume for job applications.
 - **Log out** to end your session securely.
+  
+---
+
+## Deployment
+
+https://airesumeoptimizer.vercel.app/
+
+---
 
 ## License
 
