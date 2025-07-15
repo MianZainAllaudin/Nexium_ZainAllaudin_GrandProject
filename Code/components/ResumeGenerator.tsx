@@ -460,6 +460,7 @@ export default function ResumeGenerator() {
             </div>
 
             {/* Advanced Options */}
+            {/* Uncomment if you want to include advanced options comment it due to Vercel incompatibility Server error: 405
             <div className="bg-gray-50 p-4 rounded-lg border">
               <div className="flex items-center gap-2 mb-3">
                 <Settings className="h-5 w-5 text-gray-600" />
@@ -484,6 +485,7 @@ export default function ResumeGenerator() {
                 </label>
               </div>
             </div>
+            */}
 
             {/* Error Display */}
             {error && (
