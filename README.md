@@ -18,13 +18,13 @@ A modern Next.js web application for generating tailored resumes using AI. Users
 .
 ├── app/                  # Next.js app directory (pages, layout, API routes)
 │   ├── login/            # Login page
-│   ├── api/              # API endpoints
+│   ├── api/              # API endpoints (e.g., AI Logic-> generate-resume and save-resume)
 │   ├── globals.css       # Global styles
 │   ├── layout.tsx        # Root layout
 │   └── page.tsx          # Main entry point
 ├── components/           # Reusable UI and feature components
 ├── docs/                 # Project Report
-├── lib/                  # Utility libraries (e.g., Supabase client)
+├── lib/                  # Utility libraries (e.g., Supabase client and MongoDB)
 ├── public/               # Static assets
 ├── .env.example          # Example environment variables
 ├── package.json          # Project dependencies and scripts
